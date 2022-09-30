@@ -1,0 +1,9 @@
+.vscode
+.env
+*.cmd
+certificates
+*.exe
+*.sh
+*.jpg
+*.pdf
+*.png
