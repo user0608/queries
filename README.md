@@ -52,4 +52,4 @@ En echo debemos agregar el middleware `QueryParamMiddl`, este agregará los camp
 ```
 
      Finalemente podemos hacer consultas:
-    http://localhost.com/usuarios?preload=permisos,targetas_credito&limit=100&offset=200
+    http://localhost.com/usuarios?preload=permisos,targetas_credito&limit=100&offset=200&omit=nombre

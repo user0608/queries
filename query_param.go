@@ -11,6 +11,8 @@ import (
 
 type QrueryParmas struct {
 	Preloads    []string                              `query:"preload"`
+	Omits       []string                              `query:"omit"`
+	omitsString string                                `json:"-"`
 	preloadFuns map[string]func(tx *gorm.DB) *gorm.DB `query:"-"`
 	Limit       int                                   `query:"limit"`
 	Offset      int                                   `query:"offset"`
@@ -27,6 +29,13 @@ type Preloader interface {
 		json separado por una coma: `"nombre_json,nombre_modelo"`
 	*/
 	Preload() []string
+}
+type Omiter interface {
+	Omits() []string
+}
+type PreloaderOmiter interface {
+	Preloader
+	Omiter
 }
 
 var query_param_key = contextkey("query-param-key")
@@ -52,6 +61,9 @@ func Wrapp(ctx context.Context, tx *gorm.DB) *gorm.DB {
 		}
 		tx = tx.Preload(field)
 	}
+	if len(qp.Omits) > 0 {
+		tx = tx.Omit(qp.Omits...)
+	}
 	return tx
 }
 
@@ -59,6 +71,10 @@ func QueryParamMiddl(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var qparams QrueryParmas
 		(&echo.DefaultBinder{}).BindQueryParams(c, &qparams)
+		if len(qparams.Omits) > 0 {
+			qparams.omitsString = qparams.Omits[0]
+			qparams.Omits = strings.Split(qparams.omitsString, ",")
+		}
 		ctx := context.WithValue(c.Request().Context(), query_param_key, qparams)
 		c.SetRequest(c.Request().WithContext(ctx))
 		return next(c)
@@ -86,6 +102,10 @@ Recibe un objeto que implemente la interfaz:
 
 	type Preloader interface { Preload() []string }
 */
+func Customize(ctx context.Context, po PreloaderOmiter) context.Context {
+	ctx = Omits(ctx, po)
+	return Model(ctx, po)
+}
 func Model(ctx context.Context, p Preloader) context.Context {
 	value := ctx.Value(query_param_key)
 	if value == nil {
@@ -102,7 +122,7 @@ func Model(ctx context.Context, p Preloader) context.Context {
 	preloads := strings.Split(qp.Preloads[0], ",")
 	for _, s := range preloads {
 		r := standarize(p.Preload(), s)
-		if r != "" {
+		if r != "" && !search(qp.Omits, r) {
 			aux = append(aux, r)
 		}
 	}
@@ -110,6 +130,29 @@ func Model(ctx context.Context, p Preloader) context.Context {
 	return context.WithValue(ctx, query_param_key, qp)
 }
 
+func Omits(ctx context.Context, o Omiter) context.Context {
+	value := ctx.Value(query_param_key)
+	if value == nil {
+		return ctx
+	}
+	qp, ok := value.(QrueryParmas)
+	if !ok {
+		return ctx
+	}
+	if len(qp.Omits) == 0 {
+		return ctx
+	}
+	var aux []string
+	omist := strings.Split(qp.omitsString, ",")
+	for _, s := range omist {
+		r := standarize(o.Omits(), s)
+		if r != "" {
+			aux = append(aux, r)
+		}
+	}
+	qp.Omits = aux
+	return context.WithValue(ctx, query_param_key, qp)
+}
 func standarize(items []string, s string) string {
 	for _, item := range items {
 		jsonname, modelname := fieldName(item)
@@ -146,4 +189,12 @@ func snakeCasetoCamelCase(cadena string) string {
 		sb.WriteString(s[1:])
 	}
 	return sb.String()
+}
+func search(collection []string, s string) bool {
+	for _, item := range collection {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
